@@ -5,10 +5,11 @@ A simple Rust command-line tool to export database tables to CSV files with auto
 ## Features
 
 - Connects to MySQL databases
-- Exports entire tables to CSV format
+- Exports single or multiple tables to CSV format in one run
 - Automatically handles various data types (integers, floats, booleans, text, dates)
 - Timestamps output files for easy versioning
 - Lightweight and fast
+- Supports multiple table exports with a single command
 
 ## Prerequisites
 
@@ -44,13 +45,13 @@ The binary will be available at `target/release/db_exporter`
 
    ```
    DATABASE_URL=mysql://username:password@localhost:3306/your_database
-   TABLE_NAME=your_table_name
+   TABLE_NAME=table1,table2,table3
    CSV_OUTPUT=output
    ```
 
    - `DATABASE_URL`: MySQL connection string in the format `mysql://username:password@host:port/database`
-   - `TABLE_NAME`: Name of the table to export
-   - `CSV_OUTPUT`: Base name for the output file (will be appended with timestamp)
+   - `TABLE_NAME`: Comma-separated list of table names to export (e.g., `users,products,orders`)
+   - `CSV_OUTPUT`: Base name for the output files (will be appended with table name and timestamp)
 
 ## Usage
 
@@ -62,7 +63,17 @@ cargo run --release
 ./target/release/db_exporter
 ```
 
-The tool will create a CSV file with the specified base name and a timestamp (e.g., `output_2023-01-01_12:00:00.csv`).
+The tool will create CSV files with the specified base name, table name, and a timestamp (e.g., `output_table1_2023-01-01_12-00-00.csv`).
+
+### Multiple Table Export
+
+To export multiple tables in a single run, simply list them in the `TABLE_NAME` environment variable, separated by commas:
+
+```
+TABLE_NAME=customers,orders,products
+```
+
+This will create separate CSV files for each table with their respective names in the output files.
 
 ## Supported Data Types
 
@@ -76,9 +87,9 @@ The tool will create a CSV file with the specified base name and a timestamp (e.
 
 - The tool will exit with an error if:
   - The database connection fails
-  - The specified table doesn't exist
+  - Any of the specified tables don't exist
   - There are permission issues
-  - The output file cannot be created
+  - The output files cannot be created
 
 ## License
 
