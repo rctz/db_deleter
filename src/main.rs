@@ -7,9 +7,7 @@ use sqlx::TypeInfo;
 use sqlx::mysql::MySqlPoolOptions;
 use std::env;
 use std::error::Error;
-use std::io::stdin;
-use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -39,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         env::var("DATABASE_PW").map_err(|_| "Missing environment variable: DATABASE_PW")?;
     let table_name_list_str =
         env::var("TABLE_NAME").map_err(|_| "Missing environment variable: TABLE_NAME")?;
-    let csv_output_prefix = env::var("CSV_OUTPUT_PREFIX")
+    let mut csv_output_prefix = env::var("CSV_OUTPUT_PREFIX")
         .map_err(|_| "Missing environment variable: CSV_OUTPUT_PREFIX")?;
     let output_path =
         env::var("OUTPUT_PATH").map_err(|_| "Missing environment variable: OUTPUT_PATH")?;
@@ -56,20 +54,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .connect(&full_database_url)
         .await?;
 
-    // Fetch all rows
-    for each_table in table_name_list {
-        export_table(&pool, &each_table, &output_path, &csv_output_prefix).await?;
+    let now = chrono::Local::now();
+    let folder_name = format!("{}", now.format("%Y-%m-%d_%H-%M-%S"));
+
+    if csv_output_prefix != "" {
+        csv_output_prefix = format!("{}_", csv_output_prefix);
     }
 
-    // println!("Press Enter to exit...");
-    // let _ = io::stdout().flush();
-    // let mut input = String::new();
-    // let _ = stdin().read_line(&mut input);
+    let final_output_path = create_output_path(&output_path, &folder_name)?;
+    // Fetch all rows
+    for each_table in table_name_list {
+        let file_format = format!(
+            "{}{}_{}.csv",
+            csv_output_prefix,
+            each_table,
+            now.format("%Y-%m-%d_%H-%M-%S")
+        );
+        let full_file_path = Path::new(&final_output_path).join(&file_format);
+
+        export_table(&pool, &each_table, &full_file_path).await?;
+    }
 
     Ok(())
 }
 
-fn create_output_path(output_path: &str, folder_name: &str) -> Result<String, Box<dyn Error>> {
+fn create_output_path(output_path: &String, folder_name: &str) -> Result<String, Box<dyn Error>> {
     let final_path = if output_path == "" {
         // Create folder in current directory
         std::fs::create_dir_all(folder_name)?;
@@ -88,30 +97,10 @@ fn create_output_path(output_path: &str, folder_name: &str) -> Result<String, Bo
 async fn export_table(
     pool: &sqlx::MySqlPool,
     table_name: &str,
-    output_path: &str,
-    csv_output_prefix: &str,
+    full_file_path: &PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     let query = format!("SELECT * FROM {}", table_name);
     let rows = sqlx::query(&query).fetch_all(pool).await?;
-
-    let now = chrono::Local::now();
-    let folder_name = format!("{}", now.format("%Y-%m-%d_%H-%M-%S"));
-
-    // Get the full path where CSV should be written
-    let csv_directory = create_output_path(&output_path, &folder_name)?;
-
-    let mut file_format = format!(
-        "{}_{}_{}.csv",
-        csv_output_prefix,
-        table_name,
-        now.format("%Y-%m-%d_%H-%M-%S")
-    );
-
-    if csv_output_prefix == "" {
-        file_format = format!("{}_{}.csv", table_name, now.format("%Y-%m-%d_%H-%M-%S"));
-    }
-
-    let full_file_path = Path::new(&csv_directory).join(&file_format);
 
     // Open CSV writer
     let mut wtr = Writer::from_path(full_file_path)?;
@@ -155,6 +144,9 @@ async fn export_table(
         wtr.write_record(&record)?;
     }
     wtr.flush()?;
+
+    let query_delete = format!("DELETE FROM {}", table_name);
+    sqlx::query(&query_delete).fetch_all(pool).await?;
     println!("✅ Table: {} was exported successfully.", table_name);
 
     Ok(())
